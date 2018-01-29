@@ -6,6 +6,9 @@
 // argv[3]=proliferation rate
 // argv[4]=time steps
 // argv[4]=proliferation rate distr. (0=uniform, 1=PD gradient)
+
+
+//TEST COMMENT
 #include <curand_kernel.h>
 #include <time.h>
 #include <iostream>
