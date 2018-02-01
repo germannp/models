@@ -5,7 +5,6 @@
 // argv[2]=output file tag
 // argv[3]=proliferation rate
 // argv[4]=time steps
-// argv[4]=proliferation rate distr. (0=uniform, 1=PD gradient)
 
 #include <curand_kernel.h>
 #include <time.h>
@@ -98,6 +97,12 @@ __device__ Cell force(Cell Xi, Cell r, float dist, int i, int j)
 
     if (d_type[i] >= epithelium && d_type[j] >= epithelium)
         dF += rigidity_force(Xi, r, dist) * 0.1f;
+
+    if(d_is_limb[i] and d_type[i] == mesenchyme){
+        // U_WNT = - ΣXj.w*(n_i . r_ij/r)^2/2 to bias along w
+        Polarity rhat{acosf(-r.z / dist), atan2(-r.y, -r.x)};
+        dF += (Xi.f - r.f) * polarization_force(Xi, rhat);
+    }
 
 
     if (d_type[j] >= epithelium)
@@ -567,21 +572,8 @@ int main(int argc, char const* argv[])
     auto seed = time(NULL);
     setup_rand_states<<<(n_max + 128 - 1) / 128, 128>>>(n_max, seed, d_state);
 
-    // Calculate centroid (needed to dynamically control AER)
-    // float3 centroid {0};
-    // for (auto i = 0; i <= n0; i++) {
-    //     centroid.x += limb.h_X[i].x;
-    //     centroid.y += limb.h_X[i].y;
-    //     centroid.z += limb.h_X[i].z;
-    // }
-    // centroid *= 1.f / float(n0);
-    // std::cout<<"centroid pre "<<centroid.x<<" "<<centroid.y<<"
-    // "<<centroid.z<<std::endl;
-
-
     std::cout << "n_time_steps " << n_time_steps << " write interval "
               << skip_step << std::endl;
-
 
     //restricts aer cells to a geometric rule
     float pd_extension = 5.0;//5//8.f;//+ 0.02 * float(time_step);
@@ -610,17 +602,16 @@ int main(int argc, char const* argv[])
 
         contain_aer<<<(limb.get_d_n() + 128 - 1) / 128, 128>>>(X_fixed, limb.d_X, limb.d_n);
 
-        proliferate<<<(limb.get_d_n() + 128 - 1) / 128, 128>>>(
-            max_proliferation_rate, r_min, limb.d_X, limb.d_n, d_state);
-        protrusions.set_d_n(limb.get_d_n() * prots_per_cell);
-        grid.build(limb, r_protrusion);
-        update_protrusions<<<(protrusions.get_d_n() + 32 - 1) / 32, 32>>>(
-            dist_x_ratio, dist_y_ratio, prox_x_ratio, prox_y_ratio,
-            limb.get_d_n(), grid.d_grid, limb.d_X, protrusions.d_state,
-            protrusions.d_link);
+        // proliferate<<<(limb.get_d_n() + 128 - 1) / 128, 128>>>(
+        //     max_proliferation_rate, r_min, limb.d_X, limb.d_n, d_state);
+        // protrusions.set_d_n(limb.get_d_n() * prots_per_cell);
+        // grid.build(limb, r_protrusion);
+        // update_protrusions<<<(protrusions.get_d_n() + 32 - 1) / 32, 32>>>(
+        //     dist_x_ratio, dist_y_ratio, prox_x_ratio, prox_y_ratio,
+        //     limb.get_d_n(), grid.d_grid, limb.d_X, protrusions.d_state,
+        //     protrusions.d_link);
 
-
-        limb.take_step<force, friction>(dt, intercalation);
+        limb.take_step<force, friction>(dt);
 
         // write the output
         if (time_step % skip_step == 0 || time_step == n_time_steps) {
@@ -640,19 +631,6 @@ int main(int argc, char const* argv[])
             limb_output.write_property(dv_clone);
         }
     }
-
-    // //float3 centroid {0};
-    // centroid.x = 0.f;
-    // centroid.y = 0.f;
-    // centroid.z = 0.f;
-    // for (auto i = 0; i <= n0; i++) {
-    //     centroid.x += limb.h_X[i].x;
-    //     centroid.y += limb.h_X[i].y;
-    //     centroid.z += limb.h_X[i].z;
-    // }
-    // centroid *= 1.f / float(n0);
-    // std::cout<<"centroid post "<<centroid.x<<" "<<centroid.y<<"
-    // "<<centroid.z<<std::endl;
 
     // write down the limb epithelium for later shape comparison
     limb.copy_to_host();
