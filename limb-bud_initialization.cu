@@ -69,7 +69,7 @@ __device__ Lb_cell lb_force(Lb_cell Xi, Lb_cell r, float dist, int i, int j)
 
     if (not(both_mesoderm or both_ectoderm)) return dF;
 
-    dF += rigidity_force(Xi, r, dist) * 0.1;
+    dF += bending_force(Xi, r, dist) * 0.1;
     return dF;
 }
 

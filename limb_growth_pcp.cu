@@ -96,7 +96,7 @@ __device__ Cell force(Cell Xi, Cell r, float dist, int i, int j)
     }
 
     if (d_type[i] >= epithelium && d_type[j] >= epithelium)
-        dF += rigidity_force(Xi, r, dist) * 0.1f;
+        dF += bending_force(Xi, r, dist) * 0.1f;
 
     if(d_is_limb[i] and d_type[i] == mesenchyme){
         // U_WNT = - ΣXj.w*(n_i . r_ij/r)^2/2 to bias along w
