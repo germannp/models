@@ -70,7 +70,7 @@ __device__ Cell relaxation_force(Cell Xi, Cell r, float dist, int i, int j)
     dF.z = r.z * F / dist;
 
     if (d_type[i] >= epithelium && d_type[j] >= epithelium)
-        dF += rigidity_force(Xi, r, dist) * 0.10f;
+        dF += bending_force(Xi, r, dist) * 0.10f;
 
     return dF;
 }
@@ -97,7 +97,7 @@ __device__ Cell wall_force(Cell Xi, Cell r, float dist, int i, int j)
     dF.z = r.z * F / dist;
 
     if (d_type[i] >= epithelium && d_type[j] >= epithelium)
-        dF += rigidity_force(Xi, r, dist) * 0.5f;
+        dF += bending_force(Xi, r, dist) * 0.5f;
 
     if (Xi.x < 0) dF.x = 0.f;
 
