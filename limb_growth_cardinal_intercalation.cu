@@ -145,9 +145,8 @@ __device__ void link_force(const Cell* __restrict__ d_X, const int a,
     const int b, const float strength, Cell* d_dX)
 {
     float pd_strength = proximal_strength;
-    if(d_X[a].f + d_X[b].f > distal_threshold)
+    if(d_X[a].f + d_X[b].f > 2.f * distal_threshold)
         pd_strength = distal_strength;
-    // if(d_X[a].w + d_X[b].w > 0.8f) return;
 
     auto r = d_X[a] - d_X[b];
     auto dist = norm3df(r.x, r.y, r.z);
@@ -201,8 +200,6 @@ __global__ void update_protrusions(float dist_x_ratio, float dist_y_ratio,
     auto old_dist = norm3df(old_r.x, old_r.y, old_r.z);
     auto noise = curand_uniform(&d_state[i]);
 
-    // auto random = false;
-    // auto random = (d_X[a].f + d_X[b].f) > 0.8f;
     auto distal = (d_X[a].f + d_X[b].f) > 2 * distal_threshold;// distal_threshold;//0.025f;//0.20f; //0.025
 
     auto x_ratio = 0.5f; //0.25f;
@@ -216,18 +213,6 @@ __global__ void update_protrusions(float dist_x_ratio, float dist_y_ratio,
             y_ratio = prox_y_ratio; // 0.50f
         }
     }
-
-    // auto x_ratio = 0.25f;
-    // auto y_ratio = 0.50f;
-    // if(d_is_limb[a]){
-    //     if(distal){
-    //         x_ratio = 0.5f;
-    //         y_ratio = 0.5f;
-    //     }else{
-    //         x_ratio = 0.0f;
-    //         y_ratio = 0.15f;
-    //     }
-    // }
 
     int x_y_or_z;
     if(curand_uniform(&d_state[i]) < x_ratio)
@@ -286,18 +271,6 @@ __global__ void update_protrusions(float dist_x_ratio, float dist_y_ratio,
         link->b = b;
     }
 
-
-    // // gradient-based
-    // auto more_along_w =
-    //     fabs(new_r.w / new_dist) > fabs(old_r.w / old_dist) * (1.f - noise);
-    // auto normal_to_w =
-    //     fabs(new_r.w / new_dist) < fabs(old_r.w / old_dist) * (1.f - noise);
-    //
-    // if (not_initialized or (!superficial and distal and normal_to_f and more_along_w)
-    //     or (distal and superficial and normal_to_w and more_along_f) or !distal or very_distal) {
-    //     link->a = a;
-    //     link->b = b;
-    // }
 }
 
 __global__ void proliferate(float max_rate, float mean_distance, Cell* d_X,
