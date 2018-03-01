@@ -29,12 +29,12 @@ const auto n_max = 1200000;
 const auto grid_size = 120;
 const auto prots_per_cell = 1;
 const auto protrusion_strength = 0.06f; // 0.2
-const auto distal_strength = 0.20f;
-const auto proximal_strength = 0.50f;
+const auto distal_strength = 0.15f;  //0.15
+const auto proximal_strength = 0.40f; //0.30
 const auto flank_strength = 0.20f;
 const auto r_protrusion = 2.0f;
 const auto distal_threshold = 0.35f;
-const auto max_proliferation_rate = 0.0030; //0.0035f;
+const auto max_proliferation_rate = 0.0030; //0.0030f;
 
 const auto n_time_steps = 1000;
 const auto skip_step = 100;
@@ -64,7 +64,7 @@ __device__ Cell force(Cell Xi, Cell r, float dist, int i, int j)
     if (i == j) {
         // linear gradient diffusion
         dF.w = -0.01 * (d_type[i] == mesenchyme) * Xi.w;
-        // dF.f = -0.01 * (d_type[i] == mesenchyme) * Xi.f;
+        dF.f = -0.01 * (d_type[i] == mesenchyme) * Xi.f;
         // if (Xi.w <= 0.f or !d_is_limb[i]) dF.w = 0.f;
         if (Xi.f <= 0.f or !d_is_limb[i]) dF.f = 0.f;
         // if (Xi.w < 0.f or !d_is_limb[i]) Xi.w = 0.f;
@@ -73,6 +73,16 @@ __device__ Cell force(Cell Xi, Cell r, float dist, int i, int j)
     }
 
     if (dist > r_max) return dF;
+
+    // linear gradient diffusion
+    if(r.f<0.f)
+    dF.f = 0.05 * (Xi.f -r.f) * (d_type[i] == mesenchyme);
+    else if(r.f>0.f)
+    dF.f = -0.05 * Xi.f * (d_type[i] == mesenchyme);
+
+    dF.w = -r.w * (d_type[i] == mesenchyme) * 0.5f; //0.5
+    // dF.f = -r.f * (d_type[i] == mesenchyme) * 0.5f; //0.5
+
     if (d_type[i] == mesenchyme and !d_is_limb[i] and d_is_limb[j]) return dF;
 
 
@@ -91,21 +101,13 @@ __device__ Cell force(Cell Xi, Cell r, float dist, int i, int j)
     dF.y = r.y * F / dist;
     dF.z = r.z * F / dist;
 
-    // linear gradient diffusion
-    if(r.f<0.f)
-        dF.f = 0.05 * (Xi.f -r.f) * (d_type[i] == mesenchyme);
-    else if(r.f>0.f)
-        dF.f = -0.05 * Xi.f * (d_type[i] == mesenchyme);
-
-    dF.w = -r.w * (d_type[i] == mesenchyme) * 0.5f; //0.5
-    // dF.f = -r.f * (d_type[i] == mesenchyme) * 0.5f; //0.5
 
     //"diffusion" of spatial cues (intended to reduce noise)
-    if(d_is_limb[i] == true and d_is_limb[j] == true){
-        d_pd_clone[i] += (d_pd_clone[j] - d_pd_clone[i]) * 0.0005;
-        d_ap_clone[i] += (d_ap_clone[j] - d_ap_clone[i]) * 0.0005;
-        d_dv_clone[i] += (d_dv_clone[j] - d_dv_clone[i]) * 0.0005;
-    }
+    // if(d_is_limb[i] == true and d_is_limb[j] == true){
+    //     d_pd_clone[i] += (d_pd_clone[j] - d_pd_clone[i]) * 0.0005;
+    //     d_ap_clone[i] += (d_ap_clone[j] - d_ap_clone[i]) * 0.0005;
+    //     d_dv_clone[i] += (d_dv_clone[j] - d_dv_clone[i]) * 0.0005;
+    // }
 
     if (d_type[i] >= epithelium && d_type[j] >= epithelium)
         dF += bending_force(Xi, r, dist) * 0.1f;
@@ -113,13 +115,13 @@ __device__ Cell force(Cell Xi, Cell r, float dist, int i, int j)
     if(d_is_limb[i] and d_type[i] == mesenchyme and d_type[j] == mesenchyme){
         // U_WNT = - ΣXj.w*(n_i . r_ij/r)^2/2 to bias along w
         Polarity rhat{acosf(-r.z / dist), atan2(-r.y, -r.x)};
-        if(d_is_distal[i]) {
+        // if(d_is_distal[i]) {
             dF -= fabs(r.w / Xi.w) * polarization_force(Xi, rhat);
             dF -= fabs(r.f / Xi.f) * polarization_force(Xi, rhat);
-        } else {
-            dF -= fabs(r.w / Xi.w) * polarization_force(Xi, rhat);
-            dF -= fabs(r.f / Xi.f) * polarization_force(Xi, rhat);
-        }
+        // } else {
+        //     dF -= fabs(r.w / Xi.w) * polarization_force(Xi, rhat);
+        //     dF -= fabs(r.f / Xi.f) * polarization_force(Xi, rhat);
+        // }
         // dF.theta = 0.f;
     }
 
@@ -151,9 +153,9 @@ __device__ Cell only_diffusion(Cell Xi, Cell r, float dist, int i, int j)
 
         dF.w = -0.01 * (d_type[i] == mesenchyme) * Xi.w;
         // dF.f = -0.01 * (d_type[i] == mesenchyme) * Xi.f;
-        if (Xi.w <= 0.f or !d_is_limb[i]) dF.w = 0.f;
+        // if (Xi.w <= 0.f or !d_is_limb[i]) dF.w = 0.f;
         if (Xi.f <= 0.f or !d_is_limb[i]) dF.f = 0.f;
-        if (Xi.w < 0.f or !d_is_limb[i]) Xi.w = 0.f;
+        // if (Xi.w < 0.f or !d_is_limb[i]) Xi.w = 0.f;
         if (Xi.f < 0.f or !d_is_limb[i]) Xi.f = 0.f;
         return dF;
     }
@@ -167,9 +169,9 @@ __device__ Cell only_diffusion(Cell Xi, Cell r, float dist, int i, int j)
 
     dF.w = -r.w * (d_type[i] == mesenchyme) * 0.5f;
 
-    if (Xi.w < 0.f or !d_is_limb[i]) dF.w = 0.f;
+    // if (Xi.w < 0.f or !d_is_limb[i]) dF.w = 0.f;
     if (Xi.f < 0.f or !d_is_limb[i]) dF.f = 0.f;
-    if (Xi.w < 0.f or !d_is_limb[i]) Xi.w = 0.f;
+    // if (Xi.w < 0.f or !d_is_limb[i]) Xi.w = 0.f;
     if (Xi.f < 0.f or !d_is_limb[i]) Xi.f = 0.f;
 
     if (Xi.w > 2.f) dF.w = 0.f;
@@ -191,7 +193,7 @@ __device__ void link_force(const Cell* __restrict__ d_X, const int a,
     const int b, const float strength, Cell* d_dX)
 {
     float pd_strength = proximal_strength;
-    if(d_X[a].f + d_X[b].f > distal_threshold)
+    if(d_X[a].f + d_X[b].f > 2 * distal_threshold)
         pd_strength = distal_strength;
     else if (!d_is_limb[a])
         pd_strength = flank_strength;
@@ -242,7 +244,6 @@ __global__ void update_protrusions(float dist_x_ratio, float dist_y_ratio,
 
     if ((d_type[a] != mesenchyme) or (d_type[b] != mesenchyme)) return;
     if (d_is_limb[a] != d_is_limb[b]) return;
-    // if (d_is_dorsal[a] != d_is_dorsal[b]) return;
 
     auto new_r = d_X[a] - d_X[b];
     auto new_dist = norm3df(new_r.x, new_r.y, new_r.z);
@@ -254,20 +255,18 @@ __global__ void update_protrusions(float dist_x_ratio, float dist_y_ratio,
     auto old_dist = norm3df(old_r.x, old_r.y, old_r.z);
     auto noise = curand_uniform(&d_state[i]);
 
-    // auto random = false;
-    // auto random = (d_X[a].f + d_X[b].f) > 0.8f;
-    auto distal = d_X[a].f + d_X[b].f > 2 * distal_threshold;// distal_threshold;//0.025f;//0.20f; //0.025
+    auto distal = d_X[a].f + d_X[b].f > 2 * distal_threshold;
 
 
     auto x_ratio = 0.25f; //0.25f;
     auto y_ratio = 0.75f; //0.50f;
     if(d_is_limb[a]){
         if(distal){
-            x_ratio = dist_x_ratio; // 0.10
-            y_ratio = dist_y_ratio; // 0.10
+            x_ratio = dist_x_ratio;
+            y_ratio = dist_y_ratio;
         }else{
-            x_ratio = prox_x_ratio; // 0.0f
-            y_ratio = prox_y_ratio; // 0.50f
+            x_ratio = prox_x_ratio;
+            y_ratio = prox_y_ratio;
         }
     }
 
@@ -278,14 +277,13 @@ __global__ void update_protrusions(float dist_x_ratio, float dist_y_ratio,
         x_y_or_z = 1;
     else
         x_y_or_z = 2;
+
     auto more_along_x = false;
     auto more_along_y = false;
     auto more_along_z = false;
-    auto normal_to_z = false;
     more_along_x = fabs(new_r.x / new_dist) > fabs(old_r.x / old_dist) * (1.f - noise);
     more_along_y = fabs(new_r.y / new_dist) > fabs(old_r.y / old_dist) * (1.f - noise);
     more_along_z = fabs(new_r.z / new_dist) > fabs(old_r.z / old_dist) * (1.f - noise);
-    normal_to_z = fabs(new_r.z / new_dist) < fabs(old_r.z / old_dist) * (1.f - noise);
 
     float3 polarisation{sinf(d_X[a].theta) * cosf(d_X[a].phi),
         sinf(d_X[a].theta) * sinf(d_X[a].phi),
@@ -307,10 +305,6 @@ __global__ void update_protrusions(float dist_x_ratio, float dist_y_ratio,
         fabs(new_r.w / new_dist) < fabs(old_r.w / old_dist) * (1.f - noise);
     auto more_along_w =
         fabs(new_r.w / new_dist) > fabs(old_r.w / old_dist) * (1.f - noise);
-
-
-    //     more_along_y = normal_to_z and normal_to_f;
-    //     more_along_x = normal_to_z and more_along_f;
 
     if(d_is_limb[i]){
         more_along_y = more_along_polarity;
@@ -339,10 +333,8 @@ __global__ void proliferate(float max_rate, float mean_distance, Cell* d_X,
         return;  // Dividing new cells is problematic!
 
     float rate = d_prolif_rate[i];
-    // if(d_is_dorsal[i] or d_is_distal[i])
-    //     rate *= 1.4f;
-    // else
-    //     rate *= 0.4f;
+    // if(d_is_limb[i] and !d_is_distal[i])
+    //     rate *= 0.75f;
 
     switch (d_type[i]) {
         case mesenchyme: {
@@ -378,7 +370,6 @@ __global__ void proliferate(float max_rate, float mean_distance, Cell* d_X,
     d_type[n] = d_type[i];
     d_prolif_rate[n] = d_prolif_rate[i];
     d_is_distal[n] = false;
-    // d_is_distal[n] = d_is_distal[i];
     d_is_dorsal[n] = d_is_dorsal[i];
     d_is_limb[n] = d_is_limb[i];
     d_pd_clone[n] = d_pd_clone[i];
@@ -401,15 +392,15 @@ __global__ void set_aer(float3 centroid, float pd_extension, Cell* d_X,
             and d_X[i].z > centroid.z - 4.4f) { //8.4 //4.4
             d_type[i] = aer;
             d_X[i].f = 1.f;
-            if(d_is_dorsal[i])
+            // if(d_is_dorsal[i])
                 d_X[i].w = 1.0f;
-            else
-                d_X[i].w = 0.f;
+            // else
+            //     d_X[i].w = 0.f;
         } else {
             d_type[i] = epithelium;
             d_X[i].f = 0.f;
-            // if(d_is_dorsal[i])
-            if(d_X[i].x > centroid.x - 18.f and d_is_dorsal[i])
+            // if(d_X[i].x > centroid.x - 18.f and d_is_dorsal[i]) // wnt gradient only dorsal
+            if(d_X[i].x > centroid.x - 18.f) // wnt gradient throughout epi.
                 d_X[i].w = 1.0f;
         }
     }
@@ -428,7 +419,7 @@ __global__ void contain_aer(float3 centroid, Cell* d_X, int* d_n_cells, float pr
         (d_X[i].z > centroid.z + 4.4f or d_X[i].z < centroid.z - ventral_boundary)) {
         d_type[i] = epithelium;
         d_X[i].f = 0.f;
-        if(d_is_dorsal[i])
+        // if(d_is_dorsal[i]) // wnt gradient only dorsal
             d_X[i].w = 1.f;
     }
 
@@ -471,10 +462,6 @@ int main(int argc, char const* argv[])
     float prox_x_ratio = std::stof(param3);
     float prox_y_ratio = std::stof(param4);
 
-    // float max_proliferation_rate = std::stof(argv[3]);
-    // int n_time_steps = std::stoi(argv[4]);
-    // int prolif_dist = std::stoi(argv[5]);
-
     // Load the initial conditions
     Vtk_input input(file_name);
     int n0 = input.n_points;
@@ -513,18 +500,17 @@ int main(int argc, char const* argv[])
     float z_max = 9.f;
 
     for (int i = 0; i < n0; i++) {
-        // if(limb.h_X[i].x > -2.0f and limb.h_X[i].y < 15.f){
         if(limb.h_X[i].y > y_min and limb.h_X[i].y < y_max and
             limb.h_X[i].z > z_min and limb.h_X[i].z < z_max){
-            if((type.h_prop[i] == mesenchyme and limb.h_X[i].x < -6.0f) or
-                (type.h_prop[i] == epithelium and limb.h_X[i].x < -4.0f))
+            if((type.h_prop[i] == mesenchyme and limb.h_X[i].x < -2.0f) or //-6
+                (type.h_prop[i] == epithelium and limb.h_X[i].x < -4.0f))  //-4
                 is_limb.h_prop[i] = false;
             else
                 is_limb.h_prop[i] = true;
         }else
             is_limb.h_prop[i] = false;
 
-        limb.h_X[i].theta = M_PI/2.f;
+        limb.h_X[i].theta = M_PI / 2.f;
         limb.h_X[i].phi = 2. * M_PI * rand() / (RAND_MAX + 1.);
     }
     is_limb.copy_to_device();
@@ -634,9 +620,9 @@ int main(int argc, char const* argv[])
             is_distal.copy_to_host();
             is_dorsal.copy_to_host();
             is_limb.copy_to_host();
-            // pd_clone.copy_to_host();
-            // ap_clone.copy_to_host();
-            // dv_clone.copy_to_host();
+            pd_clone.copy_to_host();
+            ap_clone.copy_to_host();
+            dv_clone.copy_to_host();
         }
 
         contain_aer<<<(limb.get_d_n() + 128 - 1) / 128, 128>>>(X_fixed, limb.d_X, limb.d_n, float(time_step)/float(n_time_steps));
@@ -666,9 +652,9 @@ int main(int argc, char const* argv[])
             limb_output.write_property(is_distal);
             limb_output.write_property(is_dorsal);
             limb_output.write_property(is_limb);
-            // limb_output.write_property(pd_clone);
-            // limb_output.write_property(ap_clone);
-            // limb_output.write_property(dv_clone);
+            limb_output.write_property(pd_clone);
+            limb_output.write_property(ap_clone);
+            limb_output.write_property(dv_clone);
         }
     }
 
