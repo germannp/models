@@ -383,7 +383,7 @@ __global__ void set_aer(float3 centroid, float pd_extension, Cell* d_X,
     auto i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i > *d_n_cells) return;
 
-    if(d_is_limb and d_X[i].z > centroid.z + 0.4f)
+    if(d_X[i].z > centroid.z + 0.4f)
         d_is_dorsal[i] = true;
 
     if(d_type[i] == epithelium) {
