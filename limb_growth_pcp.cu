@@ -34,7 +34,8 @@ const auto proximal_strength = 0.40f; //0.30
 const auto flank_strength = 0.20f;
 const auto r_protrusion = 2.0f;
 const auto distal_threshold = 0.35f;
-const auto max_proliferation_rate = 0.0030; //0.0030f;
+const auto max_proliferation_rate = 0.0030f; //0.0030f;
+const auto clone_ratio = 0.1f;
 
 const auto n_time_steps = 1000;
 const auto skip_step = 100;
@@ -51,6 +52,7 @@ __device__ bool* d_is_limb;
 __device__ float* d_pd_clone;
 __device__ float* d_ap_clone;
 __device__ float* d_dv_clone;
+__device__ int* d_sparse_clone;
 
 Property<int> n_mes_nbs{n_max, "n_mes_nbs"};  // defining these here so function
 Property<int> n_epi_nbs{n_max, "n_epi_nbs"};  // "neighbour_init" can see them
@@ -375,6 +377,7 @@ __global__ void proliferate(float max_rate, float mean_distance, Cell* d_X,
     d_pd_clone[n] = d_pd_clone[i];
     d_ap_clone[n] = d_ap_clone[i];
     d_dv_clone[n] = d_dv_clone[i];
+    d_sparse_clone[n] = d_sparse_clone[i];
 }
 
 __global__ void set_aer(float3 centroid, float pd_extension, Cell* d_X,
@@ -561,7 +564,7 @@ int main(int argc, char const* argv[])
     is_distal.copy_to_device();
     is_dorsal.copy_to_device();
 
-    //set up clone-like tracking in the PD axis
+    //set up clone-like tracking (gradient-like labelling)
     Property<float> pd_clone{n_max, "pd_clone"};
     cudaMemcpyToSymbol(
         d_pd_clone, &pd_clone.d_prop, sizeof(d_pd_clone));
@@ -572,11 +575,34 @@ int main(int argc, char const* argv[])
     cudaMemcpyToSymbol(
         d_dv_clone, &dv_clone.d_prop, sizeof(d_dv_clone));
 
+    //set up clone-like tracking (sparse labelling)
+    Property<float> sparse_clone{n_max, "sparse_clone"};
+    cudaMemcpyToSymbol(
+        d_sparse_clone, &sparse_clone.d_prop, sizeof(d_sparse_clone));
+
+    //spheric clone
+    float cx = 42.0f;
+    float cy = 10.0f;
+    float cz = 0.0f;
+    float radius = 2.5f;
+
+    auto n_clones = 0;
     for (int i = 0; i < n0; i++) {
         if(is_limb.h_prop[i]){
             pd_clone.h_prop[i] = limb.h_X[i].x;
             ap_clone.h_prop[i] = limb.h_X[i].y + 20.f;
             dv_clone.h_prop[i] = limb.h_X[i].z + 20.f;
+            //point clones
+            // if(rand() / (RAND_MAX + 1.) < clone_ratio){
+            //     n_clones++;
+            //     sparse_clone.h_prop[i] = n_clones;
+            // } else
+            //     sparse_clone.h_prop[i] = 0;
+            //spheric clone
+            if(pow(cx - limb.h_X[i].x, 2) + pow(cy - limb.h_X[i].y, 2)
+                + pow(cz - limb.h_X[i].z, 2) < radius*radius)
+                sparse_clone.h_prop[i] = 1;
+
         }else{
             pd_clone.h_prop[i] = 0.5 * limb.h_X[i].x;
             ap_clone.h_prop[i] = 0.5 * (limb.h_X[i].y + 20.f);
@@ -587,6 +613,10 @@ int main(int argc, char const* argv[])
     pd_clone.copy_to_device();
     ap_clone.copy_to_device();
     dv_clone.copy_to_device();
+    sparse_clone.copy_to_device();
+
+    std::cout<<"sparse clone number "<<n_clones<<std::endl;
+
 
     // State for proliferations
     curandState* d_state;
@@ -623,6 +653,7 @@ int main(int argc, char const* argv[])
             pd_clone.copy_to_host();
             ap_clone.copy_to_host();
             dv_clone.copy_to_host();
+            sparse_clone.copy_to_host();
         }
 
         contain_aer<<<(limb.get_d_n() + 128 - 1) / 128, 128>>>(X_fixed, limb.d_X, limb.d_n, float(time_step)/float(n_time_steps));
@@ -655,6 +686,7 @@ int main(int argc, char const* argv[])
             limb_output.write_property(pd_clone);
             limb_output.write_property(ap_clone);
             limb_output.write_property(dv_clone);
+            limb_output.write_property(sparse_clone);
         }
     }
 
