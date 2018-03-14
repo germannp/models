@@ -33,7 +33,7 @@ const auto distal_strength = 0.15f;  //0.15
 const auto proximal_strength = 0.40f; //0.30
 const auto flank_strength = 0.20f;
 const auto r_protrusion = 2.0f;
-const auto distal_threshold = 0.35f;
+const auto distal_threshold = 0.25f;
 const auto max_proliferation_rate = 0.0030f; //0.0030f;
 const auto clone_ratio = 0.1f;
 
@@ -216,8 +216,8 @@ __device__ void link_force(const Cell* __restrict__ d_X, const int a,
     atomicAdd(&d_dX[b].z, pd_strength * r.z / dist);
 }
 
-__global__ void update_protrusions(float dist_x_ratio, float dist_y_ratio,
-    float prox_x_ratio, float prox_y_ratio, const int n_cells,
+__global__ void update_protrusions(float dist_y_ratio,
+    float prox_y_ratio, const int n_cells,
     const Grid* __restrict__ d_grid, const Cell* __restrict d_X,
     curandState* d_state, Link* d_link)
 {
@@ -264,10 +264,10 @@ __global__ void update_protrusions(float dist_x_ratio, float dist_y_ratio,
     auto y_ratio = 0.75f; //0.50f;
     if(d_is_limb[a]){
         if(distal){
-            x_ratio = dist_x_ratio;
+            x_ratio = 0.0f;
             y_ratio = dist_y_ratio;
         }else{
-            x_ratio = prox_x_ratio;
+            x_ratio = 0.0f;
             y_ratio = prox_y_ratio;
         }
     }
@@ -398,7 +398,7 @@ __global__ void set_aer(float3 centroid, float pd_extension, Cell* d_X,
             // if(d_is_dorsal[i])
                 d_X[i].w = 1.0f;
             // else
-            //     d_X[i].w = 0.f;
+                // d_X[i].w = 0.f;
         } else {
             d_type[i] = epithelium;
             d_X[i].f = 0.f;
@@ -453,17 +453,12 @@ int main(int argc, char const* argv[])
     std::string codename = argv[2];
     std::string param1 = argv[3];
     std::string param2 = argv[4];
-    std::string param3 = argv[5];
-    std::string param4 = argv[6];
 
     std::string output_tag = codename + "_dt_" +
         std::to_string(distal_threshold) +
-        "_drx_" + param1 + "_dry_" + param2 +
-        "_prx_" + param3 + "_pry_" + param4;
-    float dist_x_ratio = std::stof(param1);
-    float dist_y_ratio = std::stof(param2);
-    float prox_x_ratio = std::stof(param3);
-    float prox_y_ratio = std::stof(param4);
+        "_dry_" + param1 + "_pry_" + param2;
+    float dist_y_ratio = std::stof(param1);
+    float prox_y_ratio = std::stof(param2);
 
     // Load the initial conditions
     Vtk_input input(file_name);
@@ -663,7 +658,7 @@ int main(int argc, char const* argv[])
         protrusions.set_d_n(limb.get_d_n() * prots_per_cell);
         grid.build(limb, r_protrusion);
         update_protrusions<<<(protrusions.get_d_n() + 32 - 1) / 32, 32>>>(
-            dist_x_ratio, dist_y_ratio, prox_x_ratio, prox_y_ratio,
+            dist_y_ratio, prox_y_ratio,
             limb.get_d_n(), grid.d_grid, limb.d_X, protrusions.d_state,
             protrusions.d_link);
 
