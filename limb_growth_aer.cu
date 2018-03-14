@@ -29,11 +29,11 @@ const auto n_max = 1200000;
 const auto grid_size = 120;
 const auto prots_per_cell = 1;
 const auto protrusion_strength = 0.06f; // 0.2
-const auto distal_strength = 0.15f;  //0.15
-const auto proximal_strength = 0.40f; //0.30
+const auto distal_strength = 0.20f;  //0.15
+const auto proximal_strength = 0.35f; //0.30
 const auto flank_strength = 0.20f;
 const auto r_protrusion = 2.0f;
-const auto distal_threshold = 0.35f;
+const auto distal_threshold = 0.25f;
 const auto max_proliferation_rate = 0.0030f; //0.0030f;
 const auto aer_threshold = 0.001f;
 
@@ -119,7 +119,7 @@ __device__ Cell force(Cell Xi, Cell r, float dist, int i, int j)
     // if (Xi.w > 2.f) Xi.w = 2.f;
     // if (Xi.f > 2.f) Xi.f = 2.f;
 
-    // if (d_type[i] == mesenchyme and !d_is_limb[i] and d_is_limb[j]) return dF;
+    if (d_type[i] == mesenchyme and !d_is_limb[i] and d_is_limb[j]) return dF;
 
     float F;
     if (d_type[i] == d_type[j]) {
@@ -242,10 +242,12 @@ __device__ void link_force(const Cell* __restrict__ d_X, const int a,
     else if (!d_is_limb[a])
         pd_strength = flank_strength;
 
-    // if(d_is_dorsal[a])
-    //     pd_strength *= 1.2;
-    // else
-    //     pd_strength *= 0.8;
+    if(!d_is_distal[a]){
+        if(d_is_dorsal[a])
+            pd_strength *= 1.5;
+        else
+            pd_strength *= 0.8;
+    }
 
     auto r = d_X[a] - d_X[b];
     auto dist = norm3df(r.x, r.y, r.z);
@@ -377,8 +379,12 @@ __global__ void proliferate(float max_rate, float mean_distance, Cell* d_X,
         return;  // Dividing new cells is problematic!
 
     float rate = d_prolif_rate[i];
-    // if(d_is_limb[i] and !d_is_distal[i] and d_is_dorsal[i])
-    //     rate *= 1.25f;
+    if(!d_is_distal[i] and d_is_limb[i]){
+        if(d_is_dorsal[i])
+            rate *= 1.30f;
+        else
+            rate *= 0.7f;
+    }
 
     switch (d_type[i]) {
         case mesenchyme: {
@@ -430,29 +436,31 @@ __global__ void proliferate(float max_rate, float mean_distance, Cell* d_X,
     d_dv_clone[n] = d_dv_clone[i];
 }
 
-__global__ void set_dorso_ventral(float3 centroid, float pd_extension, Cell* d_X,
+__global__ void set_dorso_ventral(float3 distal_point, float pd_extension, Cell* d_X,
     int* d_n_cells)
 {
     auto i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i > *d_n_cells) return;
 
-    if(d_X[i].z > centroid.z - 2.4f) //+0.4
+    if(d_X[i].z > - 0.4f) //+0.4 ; -2.4
         d_is_dorsal[i] = true;
 
-    if(d_type[i] == epithelium and d_X[i].x > centroid.x - 4.f) { //18.0f
+    if(d_type[i] == epithelium and d_X[i].x > distal_point.x - 18.f) { //18.0f
         if(d_is_dorsal[i]){
             d_X[i].w = 1.0f;
-            d_X[i].dorsal = 1.0f;
+            if (d_X[i].x > distal_point.x - 6.f)
+                d_X[i].dorsal = 1.0f;
         } else {
             // d_X[i].w = 1.0f;
             d_X[i].w = 0.0f; // dorsal ectodermal gradient
-            d_X[i].ventral = 1.0f;
+            if (d_X[i].x > distal_point.x - 6.f)
+                d_X[i].ventral = 1.0f;
         }
     }
 
 }
 
-__global__ void update_aer(float3 centroid, Cell* d_X, int* d_n_cells, float progress)
+__global__ void update_aer(Cell* d_X, int* d_n_cells, float progress)
 {
     auto i = blockIdx.x * blockDim.x + threadIdx.x;
     if(i > *d_n_cells) return;
@@ -462,19 +470,19 @@ __global__ void update_aer(float3 centroid, Cell* d_X, int* d_n_cells, float pro
 
     if(d_type[i] != mesenchyme) {
         //try to make DV boundary smooth
-        if(d_is_dorsal[i] and d_dorsal_nbs[i] < d_ventral_nbs[i]){
+        if(d_X[i].dorsal == 1.0f and d_dorsal_nbs[i] < d_ventral_nbs[i]){
             d_is_dorsal[i] = false;
             d_X[i].ventral = 1.f;
             d_X[i].w = 0.f; //dorsal ectodermal gradient
         }
-        if(!d_is_dorsal[i] and d_dorsal_nbs[i] > d_ventral_nbs[i]){
+        if(d_X[i].ventral == 1.0f and d_dorsal_nbs[i] > d_ventral_nbs[i]){
             d_is_dorsal[i] = true;
             d_X[i].dorsal = 1.f;
             d_X[i].w = 1.f; //dorsal ectodermal gradient
         }
 
         //defining AER boundariess
-        if((d_X[i].dorsal > aer_threshold and d_X[i].ventral > aer_threshold) and d_X[i].x > centroid.x - 20.f){
+        if(d_X[i].dorsal > aer_threshold and d_X[i].ventral > aer_threshold){
             d_type[i] = aer;
             d_X[i].f = 1.f;
         } else {
@@ -585,21 +593,31 @@ int main(int argc, char const* argv[])
     is_limb.copy_to_device();
 
     float maximum = limb.h_X[0].x;
+    float minimum = limb.h_X[0].x;
+    float min_z = limb.h_X[0].z;
+
     int fixed;
+    int distal_point_idx;
     for (auto i = 1; i < n0; i++) {
         if (maximum < limb.h_X[i].x) {
             maximum = limb.h_X[i].x;
+            distal_point_idx = i;
+        }
+
+        if (minimum > limb.h_X[i].x and abs(limb.h_X[i].z)< min_z) {
+            minimum = limb.h_X[i].x;
             fixed = i;
         }
     }
-    float translate = 50.0 - limb.h_X[fixed].x;
-    for (auto i = 0; i < n0; i++) {
-        limb.h_X[i].x += translate;
-    }
+    // float translate = -minimum;
+    // for (auto i = 0; i < n0; i++) {
+    //     limb.h_X[i].x += translate;
+    // }
     limb.copy_to_device();
 
     limb.set_fixed(fixed);
-    float3 X_fixed{limb.h_X[fixed].x, limb.h_X[fixed].y, limb.h_X[fixed].z};
+    float3 distal_point{limb.h_X[distal_point_idx].x,
+        limb.h_X[distal_point_idx].y, limb.h_X[distal_point_idx].z};
 
     Links protrusions{n_max * prots_per_cell, protrusion_strength};
     protrusions.set_d_n(n0 * prots_per_cell);
@@ -669,16 +687,50 @@ int main(int argc, char const* argv[])
     //restricts aer cells to a geometric rule
     float pd_extension = 5.0;//5//8.f;//+ 0.02 * float(time_step);
     set_dorso_ventral<<<(limb.get_d_n() + 128 - 1) / 128, 128>>>(
-        X_fixed, pd_extension, limb.d_X, limb.d_n);
+        distal_point, pd_extension, limb.d_X, limb.d_n);
 
     std::cout<<"setting up initial gradients"<<std::endl;
     for (auto time_step = 0; time_step <= 1000; time_step++) {
-        update_aer<<<(limb.get_d_n() + 128 - 1) / 128, 128>>>(X_fixed, limb.d_X, limb.d_n, float(time_step)/float(n_time_steps));
+        update_aer<<<(limb.get_d_n() + 128 - 1) / 128, 128>>>(limb.d_X, limb.d_n, float(time_step)/float(n_time_steps));
         limb.take_step<only_diffusion, friction>(dt);
     }
+
     std::cout<<"initial gradients done"<<std::endl;
 
     Vtk_output limb_output{output_tag};
+    // limb.copy_to_host();
+    // protrusions.copy_to_host();
+    // type.copy_to_host();
+    // // n_epi_nbs.copy_to_host();
+    // // n_mes_nbs.copy_to_host();
+    // n_dorsal_nbs.copy_to_host();
+    // n_ventral_nbs.copy_to_host();
+    // prolif_rate.copy_to_host();
+    // is_distal.copy_to_host();
+    // is_dorsal.copy_to_host();
+    // is_limb.copy_to_host();
+    // pd_clone.copy_to_host();
+    // ap_clone.copy_to_host();
+    // dv_clone.copy_to_host();
+    // limb_output.write_positions(limb);
+    // limb_output.write_links(protrusions);
+    // limb_output.write_polarity(limb);
+    // limb_output.write_field(limb, "WNT");
+    // limb_output.write_field(limb, "FGF", &Cell::f);
+    // limb_output.write_field(limb, "dorsal", &Cell::dorsal);
+    // limb_output.write_field(limb, "ventral", &Cell::ventral);
+    // limb_output.write_property(type);
+    // limb_output.write_property(n_dorsal_nbs);
+    // limb_output.write_property(n_ventral_nbs);
+    // limb_output.write_property(prolif_rate);
+    // limb_output.write_property(is_distal);
+    // limb_output.write_property(is_dorsal);
+    // limb_output.write_property(is_limb);
+    // limb_output.write_property(pd_clone);
+    // limb_output.write_property(ap_clone);
+    // limb_output.write_property(dv_clone);
+
+
     for (auto time_step = 0; time_step <= n_time_steps; time_step++) {
         if (time_step % skip_step == 0 || time_step == n_time_steps) {
             limb.copy_to_host();
@@ -697,7 +749,7 @@ int main(int argc, char const* argv[])
             dv_clone.copy_to_host();
         }
 
-        update_aer<<<(limb.get_d_n() + 128 - 1) / 128, 128>>>(X_fixed, limb.d_X, limb.d_n, float(time_step)/float(n_time_steps));
+        update_aer<<<(limb.get_d_n() + 128 - 1) / 128, 128>>>(limb.d_X, limb.d_n, float(time_step)/float(n_time_steps));
 
         proliferate<<<(limb.get_d_n() + 128 - 1) / 128, 128>>>(
             max_proliferation_rate, r_min, limb.d_X, limb.d_n, d_state);
