@@ -29,8 +29,8 @@ const auto n_max = 1200000;
 const auto grid_size = 120;
 const auto prots_per_cell = 1;
 const auto protrusion_strength = 0.06f; // 0.2
-const auto distal_strength = 0.20f;  //0.15
-const auto proximal_strength = 0.35f; //0.30
+const auto distal_strength = 0.26f;  //0.15
+const auto proximal_strength = 0.40f; //0.30
 const auto flank_strength = 0.20f;
 const auto r_protrusion = 2.0f;
 const auto distal_threshold = 0.25f;
@@ -244,9 +244,9 @@ __device__ void link_force(const Cell* __restrict__ d_X, const int a,
 
     if(!d_is_distal[a]){
         if(d_is_dorsal[a])
-            pd_strength *= 1.5;
-        else
-            pd_strength *= 0.8;
+            pd_strength *= 1.4;
+        // else
+        //     pd_strength *= 0.8;
     }
 
     auto r = d_X[a] - d_X[b];
@@ -307,13 +307,23 @@ __global__ void update_protrusions(float dist_x_ratio, float dist_y_ratio,
     auto x_ratio = 0.25f; //0.25f;
     auto y_ratio = 0.75f; //0.50f;
     if(d_is_limb[a]){
-        if(distal){
-            x_ratio = dist_x_ratio;
-            y_ratio = dist_y_ratio;
-        }else{
-            x_ratio = prox_x_ratio;
-            y_ratio = prox_y_ratio;
-        }
+            if(distal){
+                if(d_is_dorsal[a]){
+                    x_ratio = dist_x_ratio;
+                    y_ratio = dist_y_ratio;
+                }else{
+                    x_ratio = 0.1;
+                    y_ratio = 0.25;
+                }
+            }else{
+                if(d_is_dorsal[a]){
+                    x_ratio = 0.0;
+                    y_ratio = 0.5;
+                }else{
+                    x_ratio = 0.30f;
+                    y_ratio = 0.65f;
+                }
+            }
     }
 
     int x_y_or_z;
@@ -379,11 +389,16 @@ __global__ void proliferate(float max_rate, float mean_distance, Cell* d_X,
         return;  // Dividing new cells is problematic!
 
     float rate = d_prolif_rate[i];
-    if(!d_is_distal[i] and d_is_limb[i]){
-        if(d_is_dorsal[i])
-            rate *= 1.30f;
-        else
-            rate *= 0.7f;
+    if(d_is_limb[i]){
+        if(d_is_distal[i]){
+            if(!d_is_dorsal[i])
+                rate *= 1.5f;
+        }else{
+            if(d_is_dorsal[i])
+                rate *= 1.2f;
+            else
+                rate *= 0.8f;
+        }
     }
 
     switch (d_type[i]) {
