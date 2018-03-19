@@ -211,13 +211,13 @@ int main(int argc, const char* argv[])
     cells.copy_to_device();
     type.copy_to_device();
     clone.copy_to_device();
-    Links protrusions(n_max * prots_per_cell, 0.1);
+    Links protrusions{n_max * prots_per_cell, 0.1};
     protrusions.set_d_n(n_0 * prots_per_cell);
     auto intercalation = std::bind(link_forces<Lb_cell>, protrusions,
         std::placeholders::_1, std::placeholders::_2);
     Grid grid{n_max};
 
-    // Proliferate
+    // Run simulation
     Vtk_output output{"initialization"};
     for (auto time_step = 0; time_step <= n_time_steps; time_step++) {
         cells.copy_to_host();
