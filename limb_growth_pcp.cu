@@ -29,9 +29,9 @@ const auto n_max = 1200000;
 const auto grid_size = 120;
 const auto prots_per_cell = 1;
 const auto protrusion_strength = 0.06f; // 0.2
-const auto distal_strength = 0.15f;  //0.15
-const auto proximal_strength = 0.40f; //0.30
-const auto flank_strength = 0.20f;
+// const auto distal_strength = 0.075f;  //0.15
+// const auto proximal_strength = 0.20f; //0.30
+const auto flank_strength = 0.10f;
 const auto r_protrusion = 2.0f;
 const auto distal_threshold = 0.25f;
 const auto max_proliferation_rate = 0.0030f; //0.0030f;
@@ -192,13 +192,16 @@ __device__ float friction(Cell Xi, Cell r, float dist, int i, int j)
 }
 
 __device__ void link_force(const Cell* __restrict__ d_X, const int a,
-    const int b, const float strength, Cell* d_dX)
+    const int b, const float* d_strength, Cell* d_dX)
 {
-    float pd_strength = proximal_strength;
-    if(d_X[a].f + d_X[b].f > 2 * distal_threshold)
-        pd_strength = distal_strength;
-    else if (!d_is_limb[a])
-        pd_strength = flank_strength;
+
+    // if(d_X[a].f + d_X[b].f > 2 * distal_threshold)
+    //     pd_strength = 2.f * distal_strength;
+    float pd_strength;
+    if (!d_is_limb[a])
+        pd_strength = 2.f * flank_strength;
+    else
+        pd_strength = d_strength[a] + d_strength[b];
 
     // if(d_is_dorsal[a])
     //     pd_strength *= 1.2;
@@ -217,9 +220,9 @@ __device__ void link_force(const Cell* __restrict__ d_X, const int a,
 }
 
 __global__ void update_protrusions(float dist_y_ratio,
-    float prox_y_ratio, const int n_cells,
+    float prox_y_ratio, float dist_strength, float prox_strength, const int n_cells,
     const Grid* __restrict__ d_grid, const Cell* __restrict d_X,
-    curandState* d_state, Link* d_link)
+    curandState* d_state, Link* d_link, float* d_strength)
 {
     auto i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_cells * prots_per_cell) return;
@@ -315,8 +318,11 @@ __global__ void update_protrusions(float dist_y_ratio,
 
     if (distal){
         d_is_distal[a] = true;
-    } else
+        d_strength[a] = dist_strength;
+    } else {
         d_is_distal[a] = false;
+        d_strength[a] = prox_strength;
+    }
 
     if (not_initialized or (x_y_or_z == 0 and more_along_x)
         or (x_y_or_z == 1 and more_along_y) or
@@ -395,15 +401,15 @@ __global__ void set_aer(float3 centroid, float pd_extension, Cell* d_X,
             and d_X[i].z > centroid.z - 4.4f) { //8.4 //4.4
             d_type[i] = aer;
             d_X[i].f = 1.f;
-            // if(d_is_dorsal[i])
+            if(d_is_dorsal[i])
                 d_X[i].w = 1.0f;
-            // else
-                // d_X[i].w = 0.f;
+            else
+                d_X[i].w = 0.f;
         } else {
             d_type[i] = epithelium;
             d_X[i].f = 0.f;
-            // if(d_X[i].x > centroid.x - 18.f and d_is_dorsal[i]) // wnt gradient only dorsal
-            if(d_X[i].x > centroid.x - 18.f) // wnt gradient throughout epi.
+            if(d_X[i].x > centroid.x - 18.f and d_is_dorsal[i]) // wnt gradient only dorsal
+            // if(d_X[i].x > centroid.x - 18.f) // wnt gradient throughout epi.
                 d_X[i].w = 1.0f;
         }
     }
@@ -422,12 +428,12 @@ __global__ void contain_aer(float3 centroid, Cell* d_X, int* d_n_cells, float pr
         (d_X[i].z > centroid.z + 4.4f or d_X[i].z < centroid.z - ventral_boundary)) {
         d_type[i] = epithelium;
         d_X[i].f = 0.f;
-        // if(d_is_dorsal[i]) // wnt gradient only dorsal
+        if(d_is_dorsal[i]) // wnt gradient only dorsal
             d_X[i].w = 1.f;
     }
 
 }
-// Double step solver means we have to initialise n_neibhbours before every
+// Double step solver means we have to initialise n_neighbours before every
 // step.
 // This function is called before each step.
 void neighbour_init(const Cell* __restrict__ d_X, Cell* d_dX)
@@ -442,7 +448,7 @@ void link_forces_w_n_init(Links& links, const Pt* __restrict__ d_X, Pt* d_dX)
     thrust::fill(thrust::device, n_epi_nbs.d_prop, n_epi_nbs.d_prop + n_max, 0);
     thrust::fill(thrust::device, n_mes_nbs.d_prop, n_mes_nbs.d_prop + n_max, 0);
     link<Pt, force><<<(links.get_d_n() + 32 - 1) / 32, 32>>>(
-        d_X, d_dX, links.d_link, links.get_d_n(), links.strength);
+        d_X, d_dX, links.d_link, links.get_d_n(), links.d_strength);
 }
 
 //*****************************************************************************
@@ -453,12 +459,18 @@ int main(int argc, char const* argv[])
     std::string codename = argv[2];
     std::string param1 = argv[3];
     std::string param2 = argv[4];
+    std::string param3 = argv[5];
+    std::string param4 = argv[6];
 
     std::string output_tag = codename + "_dt_" +
         std::to_string(distal_threshold) +
-        "_dry_" + param1 + "_pry_" + param2;
+        "_dry_" + param1 + "_pry_" + param2 +
+        "_ds_" + param3 + "_ps_" + param4;
     float dist_y_ratio = std::stof(param1);
     float prox_y_ratio = std::stof(param2);
+    float distal_strength = std::stof(param3);
+    float proximal_strength = std::stof(param4);
+
 
     // Load the initial conditions
     Vtk_input input(file_name);
@@ -658,9 +670,9 @@ int main(int argc, char const* argv[])
         protrusions.set_d_n(limb.get_d_n() * prots_per_cell);
         grid.build(limb, r_protrusion);
         update_protrusions<<<(protrusions.get_d_n() + 32 - 1) / 32, 32>>>(
-            dist_y_ratio, prox_y_ratio,
+            dist_y_ratio, prox_y_ratio, distal_strength, proximal_strength,
             limb.get_d_n(), grid.d_grid, limb.d_X, protrusions.d_state,
-            protrusions.d_link);
+            protrusions.d_link, protrusions.d_strength);
 
         limb.take_step<force, friction>(dt, intercalation);
 
