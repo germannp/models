@@ -276,9 +276,10 @@ __global__ void update_protrusions(float dist_y_ratio,
     }
 
     int x_y_or_z;
-    if(curand_uniform(&d_state[i]) < x_ratio)
+    float dice = curand_uniform(&d_state[i]);
+    if(dice < x_ratio)
         x_y_or_z = 0;
-    else if(curand_uniform(&d_state[i]) < y_ratio)
+    else if(dice < y_ratio)
         x_y_or_z = 1;
     else
         x_y_or_z = 2;
