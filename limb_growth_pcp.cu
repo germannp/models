@@ -584,7 +584,7 @@ int main(int argc, char const* argv[])
         d_dv_clone, &dv_clone.d_prop, sizeof(d_dv_clone));
 
     //set up clone-like tracking (sparse labelling)
-    Property<float> sparse_clone{n_max, "sparse_clone"};
+    Property<int> sparse_clone{n_max, "sparse_clone"};
     cudaMemcpyToSymbol(
         d_sparse_clone, &sparse_clone.d_prop, sizeof(d_sparse_clone));
 
