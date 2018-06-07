@@ -41,8 +41,7 @@ __device__ Ln_cell relu_w_migration(
     if (r.cxcl13 > 0) return dF;
 
     Polarity rhat{acosf(-r.z / dist), atan2(-r.y, -r.x)};
-    dF += 100 * (Xi.cxcl13 -
-         time_step <= bidirectional_polarization_forcee_step++) {
+    dF += 100 * (Xi.cxcl13 - r.cxcl13) * unidirectional_polarization_force(Xi, rhat);
     return dF;
 }
 
