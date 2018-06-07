@@ -143,11 +143,11 @@ __device__ Cell force(Cell Xi, Cell r, float dist, int i, int j)
         // U_WNT = - ΣXj.w*(n_i . r_ij/r)^2/2 to bias along w
         Polarity rhat{acosf(-r.z / dist), atan2(-r.y, -r.x)};
         // if(d_is_distal[i]) {
-            dF -= fabs(r.w / Xi.w) * polarization_force(Xi, rhat);
-            dF -= fabs(r.f / Xi.f) * polarization_force(Xi, rhat);
+            dF -= fabs(r.w / Xi.w) * bidirectional_polarization_force(Xi, rhat);
+            dF -= fabs(r.f / Xi.f) * bidirectional_polarization_force(Xi, rhat);
         // } else {
-        //     dF -= fabs(r.w / Xi.w) * polarization_force(Xi, rhat);
-        //     dF -= fabs(r.f / Xi.f) * polarization_force(Xi, rhat);
+        //     dF -= fabs(r.w / Xi.w) * bidirectional_polarization_force(Xi, rhat);
+        //     dF -= fabs(r.f / Xi.f) * bidirectional_polarization_force(Xi, rhat);
         // }
         // dF.theta = 0.f;
     }

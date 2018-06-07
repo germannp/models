@@ -35,7 +35,14 @@ __device__ Ln_cell relu_w_migration(
     dF.z = r.z * F / dist;
     dF.cxcl13 = -r.cxcl13;
 
-    dF += migration_force(Xi, r, dist);
+    // dF += migration_force(Xi, r, dist);
+    if (d_type[i] != bcell) return dF;
+
+    if (r.cxcl13 > 0) return dF;
+
+    Polarity rhat{acosf(-r.z / dist), atan2(-r.y, -r.x)};
+    dF += 100 * (Xi.cxcl13 -
+         time_step <= bidirectional_polarization_forcee_step++) {
     return dF;
 }
 
@@ -44,11 +51,19 @@ int main(int argc, const char* argv[])
 {
     // Prepare initial state
     Solution<Ln_cell, Tile_solver> cells{n_cells};
-    relaxed_sphere(0.75, cells);
     Property<Cell_types> type{n_cells};
     cudaMemcpyToSymbol(d_type, &type.d_prop, sizeof(d_type));
-    for (auto i = 0; i < n_cells; i++) type.h_prop[i] = bcell;
-    type.h_prop[0] = fdc;
+    for (auto i = 0; i < n_cells; i++) {
+        cells.h_X[i].theta = acos(2. * rand() / (RAND_MAX + 1.) - 1.);
+        cells.h_X[i].phi = 2. * M_PI * rand() / (RAND_MAX + 1.);
+        if (i == 0)
+            type.h_prop[i] = fdc;
+        else if (i < 0.5 * n_cells)
+            type.h_prop[i] = bcell;
+        else
+            type.h_prop[i] = tcell;
+    }
+    relaxed_sphere(0.75, cells);
     type.copy_to_device();
 
     // Integrate cell positions
@@ -57,6 +72,7 @@ int main(int argc, const char* argv[])
         cells.copy_to_host();
         cells.take_step<relu_w_migration>(dt);
         output.write_positions(cells);
+        output.write_polarity(cells);
         output.write_property(type);
         output.write_field(cells, "Cxcl13", &Ln_cell::cxcl13);
     }
