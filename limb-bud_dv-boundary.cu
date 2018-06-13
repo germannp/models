@@ -26,8 +26,8 @@ __device__ Lb_cell lb_force(Lb_cell Xi, Lb_cell r, float dist, int i, int j)
 {
     Lb_cell dF{0};
     if (i == j) {
-        dF.w = 0.01 / (0.01 + Xi.e * Xi.e) - Xi.w;
-        dF.e = 0.01 / (0.01 + Xi.w * Xi.w) - Xi.e;
+        dF.w = 0.01 / (0.01 + Xi.e * Xi.e) / 2 - Xi.w / 2;
+        dF.e = 0.01 / (0.01 + Xi.w * Xi.w) / 2 - Xi.e / 2;
         return dF;
     }
 
@@ -37,7 +37,7 @@ __device__ Lb_cell lb_force(Lb_cell Xi, Lb_cell r, float dist, int i, int j)
     dF.x = r.x * F / dist;
     dF.y = r.y * F / dist;
     dF.z = r.z * F / dist;
-    // dF.w = -0.1 * r.w;
+    dF.w = -r.w;
 
     dF += bending_force(Xi, r, dist) * 0.1;
     return dF;
@@ -76,9 +76,13 @@ int main(int argc, const char* argv[])
     *cells.h_n = n_0;
     regular_hexagon(mean_distance, cells);
     for (auto i = 0; i < *cells.h_n; i++) {
-        cells.h_X[i].w = rand() / (RAND_MAX + 1.);
-        cells.h_X[i].e = rand() / (RAND_MAX + 1.);
-        // if (cells.h_X[i].x < 0) cells.h_X[i].w = 1;
+        // cells.h_X[i].w = rand() / (RAND_MAX + 1.) / 2;
+        // cells.h_X[i].e = rand() / (RAND_MAX + 1.);
+        if (cells.h_X[i].x < 2. * sinf(cells.h_X[i].y)) {
+            cells.h_X[i].w = 1;
+        } else {
+            cells.h_X[i].e = 1;
+        }
     }
     cells.copy_to_device();
     // Links protrusions{0, 0.1};
