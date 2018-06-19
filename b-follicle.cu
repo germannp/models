@@ -35,13 +35,14 @@ __device__ Ln_cell relu_w_migration(
     dF.z = r.z * F / dist;
     dF.cxcl13 = -r.cxcl13;
 
-    // dF += migration_force(Xi, r, dist);
+    dF += migration_force(Xi, r, dist) * (d_type[i] != fdc) / 10;
     if (d_type[i] != bcell) return dF;
 
     if (r.cxcl13 > 0) return dF;
 
     Polarity rhat{acosf(-r.z / dist), atan2(-r.y, -r.x)};
-    dF += 100 * (Xi.cxcl13 - r.cxcl13) * unidirectional_polarization_force(Xi, rhat);
+    dF += 100 * (Xi.cxcl13 - r.cxcl13) *
+          unidirectional_polarization_force(Xi, rhat);
     return dF;
 }
 
@@ -69,7 +70,7 @@ int main(int argc, const char* argv[])
     Vtk_output output{"b-follicle"};
     for (auto time_step = 0; time_step <= n_time_steps; time_step++) {
         cells.copy_to_host();
-        cells.take_step<relu_w_migration>(dt);
+        cells.take_step<relu_w_migration, friction_on_background>(dt);
         output.write_positions(cells);
         output.write_polarity(cells);
         output.write_property(type);
