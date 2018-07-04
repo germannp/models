@@ -2,7 +2,6 @@
 #include <curand_kernel.h>
 #include <math.h>
 #include <stdio.h>
-#include <functional>
 #include <thread>
 
 #include "../include/cudebug.cuh"
@@ -115,8 +114,10 @@ int main(int argc, const char* argv[])
     }
     cells.copy_to_device();
     Links protrusions{n_cells * prots_per_cell};
-    auto intercalation = std::bind(link_forces<Po_cell, protrusion_force>,
-        protrusions, std::placeholders::_1, std::placeholders::_2);
+    auto intercalation = [&protrusions](
+                             const Po_cell* __restrict__ d_X, Po_cell* d_dX) {
+        return link_forces(protrusions, d_X, d_dX);
+    };
 
     // Simulate elongation
     Vtk_output output{"aggregate"};

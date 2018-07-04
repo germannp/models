@@ -1,6 +1,5 @@
 // Simulate cell sorting by protrusions
 #include <curand_kernel.h>
-#include <functional>
 
 #include "../include/dtypes.cuh"
 #include "../include/inits.cuh"
@@ -69,8 +68,10 @@ int main(int argc, const char* argv[])
     Solution<float3, Grid_solver> cells{n_cells};
     random_sphere(1, cells);
     Links protrusions{n_protrusions, prot_strength};
-    auto prot_forces = std::bind(link_forces<>, protrusions,
-        std::placeholders::_1, std::placeholders::_2);
+    auto prot_forces = [&protrusions](
+                           const float3* __restrict__ d_X, float3* d_dX) {
+        return link_forces(protrusions, d_X, d_dX);
+    };
     Property<> type{n_cells};
     for (auto i = 0; i < n_cells; i++) {
         type.h_prop[i] = (i < n_cells * type_ratio) ? 0 : 1;

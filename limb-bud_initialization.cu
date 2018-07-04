@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <thrust/execution_policy.h>
 #include <thrust/fill.h>
-#include <functional>
 #include <thread>
 
 #include "../include/cudebug.cuh"
@@ -213,8 +212,10 @@ int main(int argc, const char* argv[])
     clone.copy_to_device();
     Links protrusions{n_max * prots_per_cell, 0.1};
     protrusions.set_d_n(n_0 * prots_per_cell);
-    auto intercalation = std::bind(link_forces<Lb_cell>, protrusions,
-        std::placeholders::_1, std::placeholders::_2);
+    auto intercalation = [&protrusions](
+                             const Lb_cell* __restrict__ d_X, Lb_cell* d_dX) {
+        return link_forces(protrusions, d_X, d_dX);
+    };
     Grid grid{n_max};
 
     // Run simulation
