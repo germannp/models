@@ -48,13 +48,12 @@ __global__ void update_polarities(Po_cell* d_X, curandState* d_state)
     auto cos_theta = cosf(d_X[i].theta);
     float3 new_dir;
     new_dir.x = (cos_theta + u.x * u.x * (1 - cos_theta)) * dir.x +
-                u.x * u.y * (1 - cos_theta) * dir.y +
-                u.y * sin_theta * dir.z;
+                u.x * u.y * (1 - cos_theta) * dir.y + u.y * sin_theta * dir.z;
     new_dir.y = u.x * u.y * (1 - cos_theta) * dir.x +
-                (cos_theta + u.y * u.y * (1 - cos_theta)) * dir.y +
-                u.y * sin_theta * dir.z;
-    new_dir.z = u.y * sin_theta * dir.x + u.x * sin_theta * dir.y +
-                cos_theta * dir.z;
+                (cos_theta + u.y * u.y * (1 - cos_theta)) * dir.y -
+                u.x * sin_theta * dir.z;
+    new_dir.z =
+        -u.y * sin_theta * dir.x + u.x * sin_theta * dir.y + cos_theta * dir.z;
     auto new_polarity = pt_to_pol(new_dir);
     d_X[i].theta = new_polarity.theta;
     d_X[i].phi = new_polarity.phi;
