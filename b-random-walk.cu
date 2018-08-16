@@ -1,8 +1,9 @@
-// Simulate mono-polar migration
+// Simulate randomly migrating cell
 #include "../include/dtypes.cuh"
 #include "../include/inits.cuh"
 #include "../include/polarity.cuh"
 #include "../include/solvers.cuh"
+#include "../include/utils.cuh"
 #include "../include/vtk.cuh"
 
 
@@ -30,6 +31,43 @@ __device__ Po_cell relu_w_migration(
 }
 
 
+__device__ float3 rotate(float3 vector, Po_cell around)
+{
+    auto u_phi = around.phi + M_PI / 2.;
+    float3 u{cosf(u_phi), sinf(u_phi), 0};
+    auto sin_theta = sinf(around.theta);
+    auto cos_theta = cosf(around.theta);
+    float3 new_vector;
+    new_vector.x = (cos_theta + u.x * u.x * (1 - cos_theta)) * vector.x +
+                   u.x * u.y * (1 - cos_theta) * vector.y +
+                   u.y * sin_theta * vector.z;
+    new_vector.y = u.x * u.y * (1 - cos_theta) * vector.x +
+                   (cos_theta + u.y * u.y * (1 - cos_theta)) * vector.y +
+                   u.y * sin_theta * vector.z;
+    new_vector.z = u.y * sin_theta * vector.x + u.x * sin_theta * vector.y +
+                   cos_theta * vector.z;
+    return new_vector;
+}
+
+
+__global__ void update_polarities(Po_cell* d_X, curandState* d_state)
+{
+    auto i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i != 0) return;
+
+    // Pick random perturbation in cone around z axis
+    Polarity perturbation{
+        curand_normal(&d_state[i]), 2.f * M_PI * curand_uniform(&d_state[i])};
+
+    // Rotate perturbation such that z axis would be in direction of migration
+    auto random_direction = pol_to_float3(perturbation);
+    auto new_direction = rotate(random_direction, d_X[i]);
+    auto new_polarity = pt_to_pol(new_direction);
+    d_X[i].theta = new_polarity.theta;
+    d_X[i].phi = new_polarity.phi;
+}
+
+
 int main(int argc, const char* argv[])
 {
     // Prepare initial state
@@ -40,11 +78,17 @@ int main(int argc, const char* argv[])
     cells.h_X[0].z = 0;
     cells.h_X[0].phi = 0.01;
     cells.copy_to_device();
+    curandState* d_state;
+    cudaMalloc(&d_state, n_cells * sizeof(curandState));
+    auto seed = time(NULL);
+    setup_rand_states<<<(n_cells + 128 - 1) / 128, 128>>>(
+        n_cells, seed, d_state);
 
     // Integrate cell positions
     Vtk_output output{"random-walk"};
     for (auto time_step = 0; time_step <= n_time_steps; time_step++) {
         cells.copy_to_host();
+        update_polarities<<<(n_cells + 32 - 1) / 32, 32>>>(cells.d_X, d_state);
         cells.take_step<relu_w_migration>(dt);
         output.write_positions(cells);
         output.write_polarity(cells);
