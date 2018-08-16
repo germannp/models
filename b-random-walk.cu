@@ -31,25 +31,6 @@ __device__ Po_cell relu_w_migration(
 }
 
 
-__device__ float3 rotate(float3 vector, Po_cell around)
-{
-    auto u_phi = around.phi + M_PI / 2.;
-    float3 u{cosf(u_phi), sinf(u_phi), 0};
-    auto sin_theta = sinf(around.theta);
-    auto cos_theta = cosf(around.theta);
-    float3 new_vector;
-    new_vector.x = (cos_theta + u.x * u.x * (1 - cos_theta)) * vector.x +
-                   u.x * u.y * (1 - cos_theta) * vector.y +
-                   u.y * sin_theta * vector.z;
-    new_vector.y = u.x * u.y * (1 - cos_theta) * vector.x +
-                   (cos_theta + u.y * u.y * (1 - cos_theta)) * vector.y +
-                   u.y * sin_theta * vector.z;
-    new_vector.z = u.y * sin_theta * vector.x + u.x * sin_theta * vector.y +
-                   cos_theta * vector.z;
-    return new_vector;
-}
-
-
 __global__ void update_polarities(Po_cell* d_X, curandState* d_state)
 {
     auto i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -60,9 +41,21 @@ __global__ void update_polarities(Po_cell* d_X, curandState* d_state)
         curand_normal(&d_state[i]), 2.f * M_PI * curand_uniform(&d_state[i])};
 
     // Rotate perturbation such that z axis would be in direction of migration
-    auto random_direction = pol_to_float3(perturbation);
-    auto new_direction = rotate(random_direction, d_X[i]);
-    auto new_polarity = pt_to_pol(new_direction);
+    auto dir = pol_to_float3(perturbation);
+    auto u_phi = d_X[i].phi + M_PI / 2.;
+    float3 u{cosf(u_phi), sinf(u_phi), 0};
+    auto sin_theta = sinf(d_X[i].theta);
+    auto cos_theta = cosf(d_X[i].theta);
+    float3 new_dir;
+    new_dir.x = (cos_theta + u.x * u.x * (1 - cos_theta)) * dir.x +
+                u.x * u.y * (1 - cos_theta) * dir.y +
+                u.y * sin_theta * dir.z;
+    new_dir.y = u.x * u.y * (1 - cos_theta) * dir.x +
+                (cos_theta + u.y * u.y * (1 - cos_theta)) * dir.y +
+                u.y * sin_theta * dir.z;
+    new_dir.z = u.y * sin_theta * dir.x + u.x * sin_theta * dir.y +
+                cos_theta * dir.z;
+    auto new_polarity = pt_to_pol(new_dir);
     d_X[i].theta = new_polarity.theta;
     d_X[i].phi = new_polarity.phi;
 }
