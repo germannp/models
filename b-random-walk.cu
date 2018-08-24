@@ -37,8 +37,8 @@ __global__ void update_polarities(Po_cell* d_X, curandState* d_state)
     if (i != 0) return;
 
     // Pick random perturbation in cone around z axis
-    Polarity perturbation{
-        curand_normal(&d_state[i]), 2.f * M_PI * curand_uniform(&d_state[i])};
+    Polarity perturbation{curand_normal(&d_state[i]),
+        2.f * static_cast<float>(M_PI) * curand_uniform(&d_state[i])};
 
     // Rotate perturbation such that z axis would be in direction of migration
     auto dir = pol_to_float3(perturbation);
@@ -65,9 +65,7 @@ int main(int argc, const char* argv[])
     // Prepare initial state
     Solution<Po_cell, Tile_solver> cells{n_cells};
     relaxed_sphere(0.75, cells);
-    cells.h_X[0].x = 0;
-    cells.h_X[0].y = 0;
-    cells.h_X[0].z = 0;
+    cells.h_X[0] = Po_cell{0};
     cells.h_X[0].phi = 0.01;
     cells.copy_to_device();
     curandState* d_state;
