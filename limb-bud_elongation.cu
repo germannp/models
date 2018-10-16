@@ -177,8 +177,11 @@ int main(int argc, const char* argv[])
     cudaMemcpyToSymbol(d_epi_nbs, &n_epi_nbs.d_prop, sizeof(d_epi_nbs));
     Links protrusions(n_max * prots_per_cell, protrusion_strength);
     protrusions.set_d_n(n_0 * prots_per_cell);
-    auto intercalation = [&protrusions](
-                             const Lb_cell* __restrict__ d_X, Lb_cell* d_dX) {
+    auto intercalation = [&](const Lb_cell* __restrict__ d_X, Lb_cell* d_dX) {
+        thrust::fill(thrust::device, n_mes_nbs.d_prop,
+            n_mes_nbs.d_prop + cells.get_d_n(), 0);
+        thrust::fill(thrust::device, n_epi_nbs.d_prop,
+            n_epi_nbs.d_prop + cells.get_d_n(), 0);
         return link_forces(protrusions, d_X, d_dX);
     };
 
@@ -240,10 +243,6 @@ int main(int argc, const char* argv[])
                 update_protrusions<<<(protrusions.get_d_n() + 32 - 1) / 32,
                     32>>>(cells.get_d_n(), grid.d_grid, cells.d_X,
                     protrusions.d_state, protrusions.d_link);
-                thrust::fill(thrust::device, n_mes_nbs.d_prop,
-                    n_mes_nbs.d_prop + cells.get_d_n(), 0);
-                thrust::fill(thrust::device, n_epi_nbs.d_prop,
-                    n_epi_nbs.d_prop + cells.get_d_n(), 0);
                 cells.take_step<lb_force>(dt, intercalation);
             }
         });
